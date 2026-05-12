@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:background="?android:windowBackground">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/app_name"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:textColor="#E94560"
+        android:layout_marginBottom="24dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnEnableKeyboard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/enable_keyboard" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSelectKeyboard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/select_keyboard" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnLoadCsv"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/load_csv" />
+
+    <TextView
+        android:id="@+id/tvCsvStats"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:textColor="#AAAAAA"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="24dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnEnableOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/open_overlay_settings" />
+
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switchFloatingBall"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/enable_floating_ball"
+        android:textColor="#FFFFFF" />
+
+</LinearLayout>
