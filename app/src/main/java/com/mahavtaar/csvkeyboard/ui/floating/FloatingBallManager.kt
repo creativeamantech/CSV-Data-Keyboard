@@ -1,33 +1,43 @@
 package com.mahavtaar.csvkeyboard.ui.floating
 
+import android.app.ForegroundServiceStartNotAllowedException
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import com.mahavtaar.csvkeyboard.R
 import com.mahavtaar.csvkeyboard.data.prefs.AppPreferences
+import com.mahavtaar.csvkeyboard.ui.setup.MainActivity
+import com.mahavtaar.csvkeyboard.ui.setup.OverlayPermissionHelper
 
 object FloatingBallManager {
     fun start(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
-            !Settings.canDrawOverlays(context)) {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:${context.packageName}")
-            ).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
-            context.startActivity(intent)
+        if (!OverlayPermissionHelper.hasOverlayPermission(context)) {
+            Log.w("FloatingBall", "Overlay permission not granted — aborting start")
             return
         }
 
-        try {
-            context.startForegroundService(
-                Intent(context, FloatingBallService::class.java)
-            )
-        } catch (e: Exception) {
-            context.startService(
-                Intent(context, FloatingBallService::class.java)
-            )
+        val intent = Intent(context, FloatingBallService::class.java)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                // ForegroundServiceStartNotAllowedException is available in API 31+
+                // Catching Exception to be safe across versions, or specifically handle it
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && e is ForegroundServiceStartNotAllowedException) {
+                    showStartReminderNotification(context)
+                } else {
+                    e.printStackTrace()
+                }
+            }
+        } else {
+            context.startService(intent)
         }
+
         AppPreferences.save(context, AppPreferences.KEY_BALL_ENABLED, true)
     }
 
@@ -38,8 +48,27 @@ object FloatingBallManager {
     }
 
     fun isRunning(context: Context): Boolean {
-        // Quick check via preferences. A true check would use ActivityManager,
-        // but this works for our current UX flow toggle
         return AppPreferences.getBoolean(context, AppPreferences.KEY_BALL_ENABLED)
+    }
+
+    private fun showStartReminderNotification(context: Context) {
+        val intent = PendingIntent.getActivity(
+            context, 0,
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, FloatingBallService.CHANNEL_ID)
+            .setContentTitle("CSV Keyboard")
+            .setContentText("Tap to start the Floating Ball")
+            .setSmallIcon(R.drawable.ic_csv_ball)
+            .setContentIntent(intent)
+            .setAutoCancel(true)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(999, notification)
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+        }
     }
 }

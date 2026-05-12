@@ -1,10 +1,14 @@
 package com.mahavtaar.csvkeyboard.ui.setup
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.View
 import android.view.inputmethod.InputMethodManager
@@ -30,7 +34,10 @@ import kotlinx.coroutines.withContext
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private var isWaitingForOverlay = false
+
+    companion object {
+        const val REQUEST_CODE_NOTIFICATION = 1002
+    }
 
     private val csvPicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
@@ -46,6 +53,12 @@ class MainActivity : AppCompatActivity() {
 
         setupListeners()
         checkOnboarding()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_CODE_NOTIFICATION)
+            }
+        }
     }
 
     private fun setupListeners() {
@@ -63,9 +76,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnEnableOverlay.setOnClickListener {
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${packageName}"))
-            startActivity(intent)
-            isWaitingForOverlay = true
+            OverlayPermissionHelper.requestOverlayPermission(this)
         }
 
         binding.switchFloatingBall.setOnCheckedChangeListener { _, isChecked ->
@@ -78,19 +89,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == OverlayPermissionHelper.REQUEST_CODE_OVERLAY) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                refreshAllPermissionStates()
+                if (OverlayPermissionHelper.hasOverlayPermission(this)) {
+                    Toast.makeText(this, "✅ Overlay permission granted!", Toast.LENGTH_SHORT).show()
+                    binding.switchFloatingBall.isEnabled = true
+                } else {
+                    showMiuiOverlayGuideDialog()
+                }
+            }, 500)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
-        refreshAllPermissionStates()
-
-        if (isWaitingForOverlay) {
-            val canDrawOverlays = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
-            if (canDrawOverlays) {
-                isWaitingForOverlay = false
-                Toast.makeText(this, "Overlay permission granted!", Toast.LENGTH_SHORT).show()
-                // Emphasize the floating ball
-                binding.switchFloatingBall.isChecked = true
-            }
-        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            refreshAllPermissionStates()
+        }, 300)
     }
 
     private fun checkOnboarding() {
@@ -98,6 +116,29 @@ class MainActivity : AppCompatActivity() {
         if (!onboardingDone) {
             showOnboardingDialog()
         }
+    }
+
+    private fun showMiuiOverlayGuideDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("⚠️ One More Step Required")
+            .setMessage(
+                "Your device (MIUI / HyperOS) needs an extra permission:\n\n" +
+                "1. Go to Settings\n" +
+                "2. Search 'Display pop-up windows'\n" +
+                "   OR go to Apps → CSV Keyboard → Other Permissions\n" +
+                "3. Enable 'Display pop-up windows while running in background'\n" +
+                "4. Also enable 'Display pop-up window'\n\n" +
+                "Then come back and start the Floating Ball."
+            )
+            .setPositiveButton("Open App Settings") { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:$packageName")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(intent)
+            }
+            .setNegativeButton("I'll do it manually", null)
+            .show()
     }
 
     private fun showOnboardingDialog() {
@@ -114,7 +155,7 @@ class MainActivity : AppCompatActivity() {
 
         fun updateDialogState() {
             val imeEnabled = isImeEnabled()
-            val overlayGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
+            val overlayGranted = OverlayPermissionHelper.hasOverlayPermission(this)
             val csvLoaded = CsvRepository.getSession() != null
 
             tvStep1Done.visibility = if (imeEnabled) View.VISIBLE else View.GONE
@@ -129,8 +170,7 @@ class MainActivity : AppCompatActivity() {
                 !overlayGranted -> {
                     (btnAction as TextView).text = "Enable Overlay"
                     btnAction.setOnClickListener {
-                        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${packageName}"))
-                        startActivity(intent)
+                        OverlayPermissionHelper.requestOverlayPermission(this@MainActivity)
                     }
                 }
                 !csvLoaded -> {
@@ -146,7 +186,6 @@ class MainActivity : AppCompatActivity() {
 
         updateDialogState()
 
-        // Auto-refresh dialog when returning to activity
         lifecycleScope.launch {
             while (dialog.isShowing) {
                 delay(1000)
@@ -163,8 +202,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshAllPermissionStates() {
+        if (isDestroyed || isFinishing) return
         val imeEnabled = isImeEnabled()
-        val canDrawOverlays = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) Settings.canDrawOverlays(this) else true
+        val canDrawOverlays = OverlayPermissionHelper.hasOverlayPermission(this)
 
         binding.btnEnableKeyboard.visibility = if (imeEnabled) View.GONE else View.VISIBLE
         binding.btnSelectKeyboard.visibility = if (imeEnabled) View.VISIBLE else View.GONE
@@ -175,7 +215,7 @@ class MainActivity : AppCompatActivity() {
         binding.switchFloatingBall.setOnCheckedChangeListener(null)
         binding.switchFloatingBall.isChecked = FloatingBallManager.isRunning(this)
         binding.tvBallStatus.text = if (binding.switchFloatingBall.isChecked) "Floating ball is active ✓" else "Tap to show info bubble over any app"
-        setupListeners() // reattach listener
+        setupListeners()
 
         val session = CsvRepository.loadSessionFromPrefs(this)
         if (session != null) {

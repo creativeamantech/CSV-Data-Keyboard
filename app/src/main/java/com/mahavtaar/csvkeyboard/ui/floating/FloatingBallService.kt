@@ -45,15 +45,16 @@ class FloatingBallService : LifecycleService() {
 
     companion object {
         const val ACTION_STOP = "STOP_FLOATING"
-        private const val CHANNEL_ID = "CsvKeyboardFloatingChannel"
-        private const val NOTIF_ID = 1001
+        const val CHANNEL_ID = "csv_floating_ball"
+        const val NOTIF_ID = 1001
     }
 
     override fun onCreate() {
         super.onCreate()
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
         startForeground(NOTIF_ID, buildNotification())
+
+        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
         inflateBall()
         inflateCard()
@@ -114,11 +115,14 @@ class FloatingBallService : LifecycleService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "CSV Keyboard Overlay",
+                "CSV Floating Ball",
                 NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            ).apply {
+                description = "Shows floating CSV data ball"
+                setShowBadge(false)
+            }
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.createNotificationChannel(channel)
         }
     }
 
@@ -138,18 +142,31 @@ class FloatingBallService : LifecycleService() {
             .build()
     }
 
-    private fun inflateBall() {
-        ballView = LayoutInflater.from(this).inflate(R.layout.view_floating_ball, null)
-        ballParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+    private fun createOverlayParams(width: Int, height: Int): WindowManager.LayoutParams {
+        return WindowManager.LayoutParams(
+            width,
+            height,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0; y = 300
+            x = 0
+            y = 200
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                blurBehindRadius = 0
+            }
         }
+    }
+
+    private fun inflateBall() {
+        ballView = LayoutInflater.from(this).inflate(R.layout.view_floating_ball, null)
+        ballParams = createOverlayParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
         safeAddView(ballView, ballParams)
         setupBallTouchListener()
         refreshCardData()
@@ -157,13 +174,10 @@ class FloatingBallService : LifecycleService() {
 
     private fun inflateCard() {
         cardView = LayoutInflater.from(this).inflate(R.layout.view_floating_card, null)
-        cardParams = WindowManager.LayoutParams(
+        cardParams = createOverlayParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START }
+            WindowManager.LayoutParams.WRAP_CONTENT
+        )
 
         cardView.findViewById<ImageButton>(R.id.btnCardClose).setOnClickListener { collapseCard() }
         cardView.findViewById<View>(R.id.btnCardNext).setOnClickListener {
