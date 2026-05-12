@@ -12,6 +12,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -72,6 +74,42 @@ class FloatingBallService : LifecycleService() {
         return START_STICKY
     }
 
+    private fun safeAddView(view: View, params: WindowManager.LayoutParams) {
+        Handler(Looper.getMainLooper()).post {
+            try {
+                if (!view.isAttachedToWindow) {
+                    windowManager.addView(view, params)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun safeRemoveView(view: View) {
+        Handler(Looper.getMainLooper()).post {
+            try {
+                if (view.isAttachedToWindow) {
+                    windowManager.removeView(view)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun safeUpdateLayout(view: View, params: WindowManager.LayoutParams) {
+        Handler(Looper.getMainLooper()).post {
+            try {
+                if (view.isAttachedToWindow) {
+                    windowManager.updateViewLayout(view, params)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -112,7 +150,7 @@ class FloatingBallService : LifecycleService() {
             gravity = Gravity.TOP or Gravity.START
             x = 0; y = 300
         }
-        windowManager.addView(ballView, ballParams)
+        safeAddView(ballView, ballParams)
         setupBallTouchListener()
         refreshCardData()
     }
@@ -161,7 +199,7 @@ class FloatingBallService : LifecycleService() {
                     if (isDragging) {
                         ballParams.x = (initialX + dx).toInt()
                         ballParams.y = (initialY + dy).toInt()
-                        windowManager.updateViewLayout(ballView, ballParams)
+                        safeUpdateLayout(ballView, ballParams)
                     }
                     true
                 }
@@ -179,7 +217,7 @@ class FloatingBallService : LifecycleService() {
         val screenWidth = resources.displayMetrics.widthPixels
         val targetX = if (ballParams.x + ballView.width / 2 < screenWidth / 2) 0 else screenWidth - ballView.width
         ballParams.x = targetX
-        windowManager.updateViewLayout(ballView, ballParams)
+        safeUpdateLayout(ballView, ballParams)
     }
 
     private fun expandCard() {
@@ -188,47 +226,53 @@ class FloatingBallService : LifecycleService() {
         val screenWidth = resources.displayMetrics.widthPixels
         cardParams.x = ballParams.x.coerceIn(0, screenWidth - 320)
         cardParams.y = ballParams.y
-        windowManager.addView(cardView, cardParams)
+        safeAddView(cardView, cardParams)
         refreshCardData()
     }
 
     private fun collapseCard() {
         if (!isExpanded) return
         isExpanded = false
-        if (cardView.isAttachedToWindow) windowManager.removeView(cardView)
+        safeRemoveView(cardView)
     }
 
     private fun animateBallPulse() {
-        val glowRing = ballView.findViewById<View>(R.id.glowRing)
-        val animator = AnimatorInflater.loadAnimator(this, R.animator.ball_pulse) as AnimatorSet
-        animator.setTarget(glowRing)
-        animator.start()
+        Handler(Looper.getMainLooper()).post {
+            val glowRing = ballView.findViewById<View>(R.id.glowRing)
+            val animator = AnimatorInflater.loadAnimator(this@FloatingBallService, R.animator.ball_pulse) as AnimatorSet
+            animator.setTarget(glowRing)
+            animator.start()
+        }
     }
 
     private fun refreshCardData() {
-        val session = CsvRepository.getSession() ?: CsvRepository.loadSessionFromPrefs(this)
-        if (session == null) {
-            ballView.findViewById<TextView>(R.id.tvBallRow).text = "-"
-            return
-        }
-        CsvRepository.initSession(session)
-        val row = session.currentRow
-        ballView.findViewById<TextView>(R.id.tvBallRow).text = (session.currentIndex + 1).toString()
+        Handler(Looper.getMainLooper()).post {
+            val session = CsvRepository.getSession() ?: CsvRepository.loadSessionFromPrefs(this@FloatingBallService)
+            if (session == null) {
+                ballView.findViewById<TextView>(R.id.tvBallRow).text = "-"
+                return@post
+            }
+            CsvRepository.initSession(session)
+            val row = session.currentRow
+            ballView.findViewById<TextView>(R.id.tvBallRow).text = (session.currentIndex + 1).toString()
 
-        val configs = ColumnConfigStore.load(this) ?: return
-        val container = cardView.findViewById<LinearLayout>(R.id.cardRowsContainer)
-        container.removeAllViews()
+            val configs = ColumnConfigStore.load(this@FloatingBallService) ?: return@post
+            val container = cardView.findViewById<LinearLayout>(R.id.cardRowsContainer)
+            container.removeAllViews()
 
-        configs.filter { it.mode != ColumnMode.HIDDEN }.sortedBy { it.order }.forEach { config ->
-            val value = row.data[config.columnName] ?: "—"
-            val rowView = LayoutInflater.from(this).inflate(R.layout.view_floating_card_row, container, false)
-            rowView.findViewById<TextView>(R.id.tvRowLabel).text = config.displayLabel
-            rowView.findViewById<TextView>(R.id.tvRowValue).text = value
-            rowView.setOnClickListener { copyToClipboard(value, config.displayLabel) }
-            container.addView(rowView)
+            configs.filter { it.mode != ColumnMode.HIDDEN }.sortedBy { it.order }.forEach { config ->
+                val rawValue = row.data[config.columnName] ?: ""
+                val value = rawValue.ifBlank { "—" }
+                val rowView = LayoutInflater.from(this@FloatingBallService).inflate(R.layout.view_floating_card_row, container, false)
+                rowView.findViewById<TextView>(R.id.tvRowLabel).text = config.displayLabel
+                rowView.findViewById<TextView>(R.id.tvRowValue).text = value
+                rowView.setOnClickListener { copyToClipboard(value, config.displayLabel) }
+                container.addView(rowView)
+            }
+
+            val counterText = if (session.totalRows == 0) "No data" else "Row ${session.currentIndex + 1} / ${session.totalRows}"
+            cardView.findViewById<TextView>(R.id.tvCardRowCounter).text = counterText
         }
-        cardView.findViewById<TextView>(R.id.tvCardRowCounter).text =
-            getString(R.string.row_counter, session.currentIndex + 1, session.totalRows)
     }
 
     private fun copyToClipboard(text: String, label: String) {
@@ -239,8 +283,8 @@ class FloatingBallService : LifecycleService() {
     }
 
     override fun onDestroy() {
-        if (ballView.isAttachedToWindow) windowManager.removeView(ballView)
-        if (cardView.isAttachedToWindow) windowManager.removeView(cardView)
+        safeRemoveView(ballView)
+        safeRemoveView(cardView)
         super.onDestroy()
     }
 }

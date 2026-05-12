@@ -4,13 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.inputmethodservice.InputMethodService
+import android.view.ContextThemeWrapper
 import android.view.LayoutInflater
 import android.view.View
-import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.graphics.Insets
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -30,7 +30,7 @@ class CsvKeyboardService : InputMethodService(), LifecycleOwner, ViewModelStoreO
     private val lifecycleRegistry = LifecycleRegistry(this)
     private val store = ViewModelStore()
     private lateinit var viewModel: KeyboardViewModel
-    private lateinit var binding: KeyboardViewBinding
+    private var binding: KeyboardViewBinding? = null
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val viewModelStore: ViewModelStore get() = store
@@ -45,12 +45,20 @@ class CsvKeyboardService : InputMethodService(), LifecycleOwner, ViewModelStoreO
     }
 
     override fun onCreateInputView(): View {
-        binding = KeyboardViewBinding.inflate(layoutInflater)
+        val session = CsvRepository.getSession()
+        val themedContext = ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)
+        val inflater = LayoutInflater.from(themedContext)
+
+        if (session == null || session.rows.isEmpty()) {
+            return inflater.inflate(R.layout.keyboard_empty_state, null)
+        }
+
+        binding = KeyboardViewBinding.inflate(inflater)
 
         setupListeners()
         observeState()
 
-        return binding.root
+        return binding!!.root
     }
 
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
@@ -70,16 +78,32 @@ class CsvKeyboardService : InputMethodService(), LifecycleOwner, ViewModelStoreO
         super.onDestroy()
     }
 
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        outInsets.contentTopInsets = outInsets.visibleTopInsets
+    }
+
+    private fun safeCommitText(value: String) {
+        val ic = currentInputConnection ?: return
+        try {
+            ic.beginBatchEdit()
+            ic.commitText(value, 1)
+            ic.endBatchEdit()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun setupListeners() {
-        binding.btnNext.setOnClickListener { viewModel.goNext() }
-        binding.btnPrevious.setOnClickListener { viewModel.goPrevious() }
-        binding.btnSettings.setOnClickListener {
+        binding?.btnNext?.setOnClickListener { viewModel.goNext() }
+        binding?.btnPrevious?.setOnClickListener { viewModel.goPrevious() }
+        binding?.btnSettings?.setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
             requestHideSelf(0)
         }
-        binding.btnReload.setOnClickListener { viewModel.refreshSession() }
+        binding?.btnReload?.setOnClickListener { viewModel.refreshSession() }
     }
 
     private fun observeState() {
@@ -87,32 +111,42 @@ class CsvKeyboardService : InputMethodService(), LifecycleOwner, ViewModelStoreO
             if (row != null) renderRow(row)
         }
         viewModel.sessionStats.observe(this) { stats ->
-            binding.tvRowCounter.text = getString(R.string.row_counter, stats.first + 1, stats.second)
+            val session = CsvRepository.getSession()
+            val counterText = if (session == null || session.totalRows == 0)
+                "No data"
+            else
+                "Row ${stats.first + 1} / ${stats.second}"
+            binding?.tvRowCounter?.text = counterText
         }
     }
 
     private fun renderRow(row: CsvRow) {
         val configs = ColumnConfigStore.load(this) ?: return
 
-        binding.infoChipsContainer.removeAllViews()
-        binding.typeButtonsContainer.removeAllViews()
+        binding?.infoChipsContainer?.removeAllViews()
+        binding?.typeButtonsContainer?.removeAllViews()
+
+        val themedContext = ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)
+        val inflater = LayoutInflater.from(themedContext)
 
         configs.sortedBy { it.order }.forEach { config ->
-            val value = row.data[config.columnName] ?: ""
+            val rawValue = row.data[config.columnName] ?: ""
+            val value = rawValue.ifBlank { "—" }
+
             when (config.mode) {
                 ColumnMode.INFO -> {
-                    val chip = LayoutInflater.from(this).inflate(R.layout.view_info_chip, binding.infoChipsContainer, false)
+                    val chip = inflater.inflate(R.layout.view_info_chip, binding?.infoChipsContainer, false)
                     chip.findViewById<TextView>(R.id.tvLabel).text = config.displayLabel
                     chip.findViewById<TextView>(R.id.tvValue).text = value
                     chip.setOnClickListener { copyToClipboard(value, config.displayLabel) }
-                    binding.infoChipsContainer.addView(chip)
+                    binding?.infoChipsContainer?.addView(chip)
                 }
                 ColumnMode.TYPE -> {
-                    val btn = LayoutInflater.from(this).inflate(R.layout.view_type_button, binding.typeButtonsContainer, false)
+                    val btn = inflater.inflate(R.layout.view_type_button, binding?.typeButtonsContainer, false)
                     btn.findViewById<TextView>(R.id.tvLabel).text = config.displayLabel
                     btn.findViewById<TextView>(R.id.tvValue).text = value
-                    btn.setOnClickListener { currentInputConnection?.commitText(value, 1) }
-                    binding.typeButtonsContainer.addView(btn)
+                    btn.setOnClickListener { safeCommitText(value) }
+                    binding?.typeButtonsContainer?.addView(btn)
                 }
                 ColumnMode.HIDDEN -> {}
             }
