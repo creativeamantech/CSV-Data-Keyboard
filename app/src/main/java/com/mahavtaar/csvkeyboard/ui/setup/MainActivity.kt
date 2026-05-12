@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnEnableOverlay.setOnClickListener {
-            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:\$packageName"))
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${packageName}"))
             startActivity(intent)
         }
 
