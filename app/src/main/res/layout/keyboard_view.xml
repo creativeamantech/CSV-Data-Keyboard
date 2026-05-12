@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="280dp"
+    android:orientation="vertical"
+    android:background="#1A1A2E">
+
+    <!-- Row 1: Info Chips Strip -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:id="@+id/infoChipsContainer"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:orientation="horizontal"
+            android:paddingHorizontal="8dp"
+            android:gravity="center_vertical" />
+    </HorizontalScrollView>
+
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2A2A4E" />
+
+    <!-- Row 2: Type Buttons Grid -->
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+        <com.google.android.flexbox.FlexboxLayout
+            android:id="@+id/typeButtonsContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            app:flexWrap="wrap"
+            app:justifyContent="flex_start" />
+    </ScrollView>
+
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#2A2A4E" />
+
+    <!-- Row 3: Navigation Bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#0D0D0D"
+        android:paddingHorizontal="8dp">
+
+        <ImageButton
+            android:id="@+id/btnPrevious"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/arrow_left"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="@string/prev"
+            app:tint="#FFFFFF" />
+
+        <TextView
+            android:id="@+id/tvRowCounter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1 / 250"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:layout_marginHorizontal="16dp" />
+
+        <ImageButton
+            android:id="@+id/btnNext"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/arrow_right"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="@string/next"
+            app:tint="#FFFFFF" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1" />
+
+        <ImageButton
+            android:id="@+id/btnSettings"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_settings"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="@string/settings"
+            app:tint="#AAAAAA" />
+
+        <ImageButton
+            android:id="@+id/btnReload"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_refresh"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="Reload"
+            app:tint="#AAAAAA" />
+    </LinearLayout>
+
+</LinearLayout>
