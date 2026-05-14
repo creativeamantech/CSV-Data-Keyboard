@@ -52,7 +52,11 @@ class FloatingBallService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIF_ID, buildNotification())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, buildNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(NOTIF_ID, buildNotification())
+        }
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
@@ -162,7 +166,7 @@ class FloatingBallService : LifecycleService() {
     }
 
     private fun inflateBall() {
-        ballView = LayoutInflater.from(this).inflate(R.layout.view_floating_ball, null)
+        ballView = LayoutInflater.from(android.view.ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)).inflate(R.layout.view_floating_ball, null)
         ballParams = createOverlayParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT
@@ -173,7 +177,7 @@ class FloatingBallService : LifecycleService() {
     }
 
     private fun inflateCard() {
-        cardView = LayoutInflater.from(this).inflate(R.layout.view_floating_card, null)
+        cardView = LayoutInflater.from(android.view.ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)).inflate(R.layout.view_floating_card, null)
         cardParams = createOverlayParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT
@@ -285,7 +289,7 @@ class FloatingBallService : LifecycleService() {
             }
 
             val counterText = if (session.totalRows == 0) "No data" else "Row ${session.currentIndex + 1} / ${session.totalRows}"
-            cardView.findViewById<TextView>(R.id.tvCardRowCounter).text = counterText
+            cardView.findViewById<TextView>(R.id.tvCardRowCounter).text = if (session.totalRows == 0) "0 / 0" else "${session.currentIndex + 1} / ${session.totalRows}"
         }
     }
 

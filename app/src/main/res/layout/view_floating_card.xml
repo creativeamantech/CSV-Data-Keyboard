@@ -5,14 +5,19 @@
     android:layout_height="wrap_content"
     app:cardBackgroundColor="#1A1A2E"
     app:cardCornerRadius="16dp"
-    app:cardElevation="16dp">
+    app:cardElevation="16dp"
+    app:strokeWidth="1dp"
+    app:strokeColor="#2A2A4E">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="16dp">
+        android:paddingTop="12dp"
+        android:paddingBottom="16dp"
+        android:paddingHorizontal="16dp">
 
+        <!-- Header -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -20,13 +25,12 @@
             android:gravity="center_vertical">
 
             <TextView
-                android:id="@+id/tvCardRowCounter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Row 1 / 250"
+                android:text="CSV Data"
                 android:textColor="#E94560"
                 android:textStyle="bold"
-                android:textSize="13sp" />
+                android:textSize="14sp" />
 
             <Space
                 android:layout_width="0dp"
@@ -35,10 +39,11 @@
 
             <ImageButton
                 android:id="@+id/btnCardClose"
-                android:layout_width="24dp"
-                android:layout_height="24dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:src="@drawable/ic_close"
                 android:background="?selectableItemBackgroundBorderless"
+                android:scaleType="centerInside"
                 app:tint="#AAAAAA" />
         </LinearLayout>
 
@@ -48,13 +53,22 @@
             android:background="#2A2A4E"
             android:layout_marginVertical="8dp" />
 
-        <LinearLayout
-            android:id="@+id/cardRowsContainer"
+        <!-- Dynamic Rows -->
+        <ScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:divider="@drawable/row_divider"
-            android:showDividers="middle" />
+            android:layout_weight="1"
+            android:fadeScrollbars="false"
+            android:requiresFadingEdge="vertical">
+
+            <LinearLayout
+                android:id="@+id/cardRowsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:divider="@drawable/row_divider"
+                android:showDividers="middle" />
+        </ScrollView>
 
         <View
             android:layout_width="match_parent"
@@ -62,29 +76,49 @@
             android:background="#2A2A4E"
             android:layout_marginVertical="8dp" />
 
+        <!-- Sleek Navigation Bar -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="48dp"
             android:orientation="horizontal"
-            android:gravity="center">
+            android:background="@drawable/card_nav_bg"
+            android:gravity="center"
+            android:layout_marginTop="8dp">
 
-            <com.google.android.material.button.MaterialButton
+            <ImageButton
                 android:id="@+id/btnCardPrev"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/prev"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                android:layout_width="48dp"
+                android:layout_height="match_parent"
+                android:src="@drawable/arrow_left"
+                android:background="?selectableItemBackgroundBorderless"
+                app:tint="#FFFFFF" />
 
             <Space
-                android:layout_width="16dp"
-                android:layout_height="wrap_content" />
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCardNext"
+            <TextView
+                android:id="@+id/tvCardRowCounter"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/next"
-                style="@style/Widget.Material3.Button.OutlinedButton" />
+                android:text="1 / 250"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@+id/btnCardNext"
+                android:layout_width="48dp"
+                android:layout_height="match_parent"
+                android:src="@drawable/arrow_right"
+                android:background="?selectableItemBackgroundBorderless"
+                app:tint="#FFFFFF" />
         </LinearLayout>
 
     </LinearLayout>
