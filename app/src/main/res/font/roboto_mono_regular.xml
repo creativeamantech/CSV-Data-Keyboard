@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<font-family xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- Using system monospace instead for simplicity in testing environment, as binary files like ttf are hard to download and place properly here. -->
+</font-family>

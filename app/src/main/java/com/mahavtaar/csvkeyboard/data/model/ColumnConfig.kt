@@ -1,10 +1,13 @@
 package com.mahavtaar.csvkeyboard.data.model
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
 @Serializable
+@Entity(tableName = "column_configs")
 data class ColumnConfig(
-    val columnName: String,
+    @PrimaryKey val columnName: String,
     val mode: ColumnMode,
     val displayLabel: String,
     val order: Int,

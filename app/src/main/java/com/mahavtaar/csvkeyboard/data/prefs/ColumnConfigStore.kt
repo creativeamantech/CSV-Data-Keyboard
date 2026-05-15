@@ -1,25 +1,20 @@
 package com.mahavtaar.csvkeyboard.data.prefs
 
 import android.content.Context
+import com.mahavtaar.csvkeyboard.data.db.AppDatabase
 import com.mahavtaar.csvkeyboard.data.model.ColumnConfig
 import com.mahavtaar.csvkeyboard.data.model.ColumnMode
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 object ColumnConfigStore {
-    fun save(context: Context, configs: List<ColumnConfig>) {
-        val json = Json.encodeToString(configs)
-        AppPreferences.save(context, AppPreferences.KEY_COLUMN_CONFIGS, json)
+    suspend fun save(context: Context, configs: List<ColumnConfig>) {
+        val db = AppDatabase.getDatabase(context)
+        db.columnConfigDao().deleteAll()
+        db.columnConfigDao().insertAll(configs)
     }
 
-    fun load(context: Context): List<ColumnConfig>? {
-        val json = AppPreferences.getString(context, AppPreferences.KEY_COLUMN_CONFIGS)
-        if (json.isNullOrEmpty()) return null
-        return try {
-            Json.decodeFromString<List<ColumnConfig>>(json)
-        } catch (e: Exception) {
-            null
-        }
+    suspend fun load(context: Context): List<ColumnConfig> {
+        val db = AppDatabase.getDatabase(context)
+        return db.columnConfigDao().getAll()
     }
 
     fun generateDefaults(headers: List<String>): List<ColumnConfig> {

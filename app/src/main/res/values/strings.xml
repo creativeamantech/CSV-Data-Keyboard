@@ -13,4 +13,9 @@
     <string name="copied_toast">Copied: %1$s</string>
     <string name="enable_floating_ball">Enable Floating Ball</string>
     <string name="open_overlay_settings">Allow Display Over Other Apps</string>
+
+    <string name="reload">Reload</string>
+    <string name="copy">Copy</string>
+    <string name="type_space">Type + Space</string>
+    <string name="type_newline">Type + Newline</string>
 </resources>

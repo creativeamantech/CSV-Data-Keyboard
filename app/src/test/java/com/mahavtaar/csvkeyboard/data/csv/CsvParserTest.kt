@@ -27,4 +27,18 @@ class CsvParserTest {
         val expected = listOf("a", "", "c")
         assertEquals(expected, parser.splitLine(line, ','))
     }
+
+    @Test
+    fun testSplitLineWithEscapedQuotes() {
+        val line = "a,\"b\"\"c\",d"
+        val expected = listOf("a", "b\"c", "d")
+        assertEquals(expected, parser.splitLine(line, ','))
+    }
+
+    @Test
+    fun testSplitLineWithQuotesAtEnds() {
+        val line = "\"a,b\",c,\"d,e\""
+        val expected = listOf("a,b", "c", "d,e")
+        assertEquals(expected, parser.splitLine(line, ','))
+    }
 }

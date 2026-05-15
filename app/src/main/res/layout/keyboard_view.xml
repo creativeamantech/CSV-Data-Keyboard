@@ -1,11 +1,45 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/keyboardRoot"
     android:layout_width="match_parent"
     android:layout_height="280dp"
     android:paddingBottom="@dimen/keyboard_bottom_padding"
     android:orientation="vertical"
-    android:background="#1A1A2E">
+    android:background="#1A1A2E"
+    android:layoutDirection="locale">
+
+    <!-- Search/Filter Bar (Hidden by default) -->
+    <LinearLayout
+        android:id="@+id/searchBarLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="8dp"
+        android:background="#2A2A4E"
+        android:visibility="gone">
+
+        <EditText
+            android:id="@+id/etSearch"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Search any column..."
+            android:textColorHint="#888888"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#888888"
+            android:inputType="text"
+            android:maxLines="1" />
+
+        <ImageButton
+            android:id="@+id/btnCloseSearch"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@drawable/ic_close"
+            android:background="?selectableItemBackgroundBorderless"
+            app:tint="#AAAAAA" />
+    </LinearLayout>
 
     <!-- Row 1: Info Chips Strip -->
     <HorizontalScrollView
@@ -82,6 +116,24 @@
             android:layout_weight="1" />
 
         <ImageButton
+            android:id="@+id/btnSearchToggle"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/ic_menu_search"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="Search"
+            app:tint="#AAAAAA" />
+
+        <ImageButton
+            android:id="@+id/btnMarkDone"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:src="@android:drawable/ic_menu_agenda"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="Mark Done"
+            app:tint="#AAAAAA" />
+
+        <ImageButton
             android:id="@+id/btnSettings"
             android:layout_width="48dp"
             android:layout_height="48dp"
@@ -96,7 +148,7 @@
             android:layout_height="48dp"
             android:src="@drawable/ic_refresh"
             android:background="?selectableItemBackgroundBorderless"
-            android:contentDescription="Reload"
+            android:contentDescription="@string/reload"
             app:tint="#AAAAAA" />
     </LinearLayout>
 

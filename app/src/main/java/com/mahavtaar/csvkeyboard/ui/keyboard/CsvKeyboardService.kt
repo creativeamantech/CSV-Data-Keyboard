@@ -1,22 +1,28 @@
 package com.mahavtaar.csvkeyboard.ui.keyboard
 
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
+import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.inputmethodservice.InputMethodService
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.ContextThemeWrapper
+import android.view.GestureDetector
 import android.view.LayoutInflater
+import android.view.MenuItem
+import android.view.MotionEvent
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.DecelerateInterpolator
+import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.graphics.Insets
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LifecycleRegistry
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
 import com.mahavtaar.csvkeyboard.R
 import com.mahavtaar.csvkeyboard.data.csv.CsvRepository
 import com.mahavtaar.csvkeyboard.data.model.ColumnMode
@@ -24,31 +30,60 @@ import com.mahavtaar.csvkeyboard.data.model.CsvRow
 import com.mahavtaar.csvkeyboard.data.prefs.ColumnConfigStore
 import com.mahavtaar.csvkeyboard.databinding.KeyboardViewBinding
 import com.mahavtaar.csvkeyboard.ui.setup.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
-class CsvKeyboardService : InputMethodService(), LifecycleOwner, ViewModelStoreOwner {
+class CsvKeyboardService : InputMethodService() {
 
-    private val lifecycleRegistry = LifecycleRegistry(this)
-    private val store = ViewModelStore()
-    private lateinit var viewModel: KeyboardViewModel
+    private var viewModel: KeyboardViewModel? = null
     private var binding: KeyboardViewBinding? = null
-
-    override val lifecycle: Lifecycle get() = lifecycleRegistry
-    override val viewModelStore: ViewModelStore get() = store
+    private var serviceScope: CoroutineScope? = null
+    private var inputViewScope: CoroutineScope? = null
+    private lateinit var gestureDetector: GestureDetector
 
     override fun onCreate() {
         super.onCreate()
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-        viewModel = ViewModelProvider(
-            this,
-            ViewModelProvider.AndroidViewModelFactory.getInstance(application)
-        )[KeyboardViewModel::class.java]
+        serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        viewModel = KeyboardViewModel(applicationContext, serviceScope!!)
+
+        gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            private val SWIPE_THRESHOLD = 100
+            private val SWIPE_VELOCITY_THRESHOLD = 100
+
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+                if (e1 == null) return false
+                val diffY = e2.y - e1.y
+                val diffX = e2.x - e1.x
+                if (abs(diffX) > abs(diffY)) {
+                    if (abs(diffX) > SWIPE_THRESHOLD && abs(velocityX) > SWIPE_VELOCITY_THRESHOLD) {
+                        if (diffX > 0) {
+                            // Swipe Right -> Previous (RTL safe navigation)
+                            viewModel?.goPrevious()
+                        } else {
+                            // Swipe Left -> Next
+                            viewModel?.goNext()
+                        }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreateInputView(): View {
-        val session = CsvRepository.getSession()
+        inputViewScope?.cancel()
+        inputViewScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
         val themedContext = ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)
         val inflater = LayoutInflater.from(themedContext)
 
+        val session = CsvRepository.getSession()
         if (session == null || session.rows.isEmpty()) {
             return inflater.inflate(R.layout.keyboard_empty_state, null)
         }
@@ -58,23 +93,42 @@ class CsvKeyboardService : InputMethodService(), LifecycleOwner, ViewModelStoreO
         setupListeners()
         observeState()
 
+        // Setup Swipe Listener
+        binding?.keyboardRoot?.setOnTouchListener { _, event ->
+            gestureDetector.onTouchEvent(event)
+            true // Consume event so swipes register anywhere
+        }
+
+        // Slide up animation
+        binding?.root?.translationY = 500f
+        binding?.root?.animate()?.translationY(0f)?.setDuration(200)?.setInterpolator(DecelerateInterpolator())?.start()
+
         return binding!!.root
     }
 
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
-        viewModel.refreshSession()
+        viewModel?.refreshSession()
+    }
+
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        inputViewScope?.cancel()
+        inputViewScope = null
+        binding = null
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
+        inputViewScope?.cancel()
+        inputViewScope = null
+        binding = null
     }
 
     override fun onDestroy() {
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        store.clear()
+        viewModel?.clear()
+        serviceScope?.cancel()
+        inputViewScope?.cancel()
         super.onDestroy()
     }
 
@@ -95,62 +149,182 @@ class CsvKeyboardService : InputMethodService(), LifecycleOwner, ViewModelStoreO
     }
 
     private fun setupListeners() {
-        binding?.btnNext?.setOnClickListener { viewModel.goNext() }
-        binding?.btnPrevious?.setOnClickListener { viewModel.goPrevious() }
+        binding?.btnNext?.setOnClickListener { viewModel?.goNext() }
+        binding?.btnPrevious?.setOnClickListener { viewModel?.goPrevious() }
         binding?.btnSettings?.setOnClickListener {
             val intent = Intent(this, MainActivity::class.java)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(intent)
             requestHideSelf(0)
         }
-        binding?.btnReload?.setOnClickListener { viewModel.refreshSession() }
+        binding?.btnReload?.setOnClickListener { viewModel?.refreshSession() }
+
+        binding?.btnSearchToggle?.setOnClickListener {
+            val searchBar = binding?.searchBarLayout
+            if (searchBar?.visibility == View.VISIBLE) {
+                searchBar.visibility = View.GONE
+                viewModel?.setSearchQuery("")
+                binding?.etSearch?.setText("")
+            } else {
+                searchBar?.visibility = View.VISIBLE
+            }
+        }
+
+        binding?.btnCloseSearch?.setOnClickListener {
+            binding?.searchBarLayout?.visibility = View.GONE
+            viewModel?.setSearchQuery("")
+            binding?.etSearch?.setText("")
+        }
+
+        binding?.etSearch?.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                viewModel?.setSearchQuery(s.toString())
+            }
+        })
+
+        binding?.btnMarkDone?.setOnClickListener {
+            viewModel?.markRowDone()
+        }
     }
 
     private fun observeState() {
-        viewModel.currentRow.observe(this) { row ->
-            if (row != null) renderRow(row)
+        inputViewScope?.launch {
+            viewModel?.currentRow?.collect { row ->
+                if (row != null) {
+                    renderRow(row)
+                }
+            }
         }
-        viewModel.sessionStats.observe(this) { stats ->
-            val session = CsvRepository.getSession()
-            val counterText = if (session == null || session.totalRows == 0)
-                "No data"
-            else
-                "Row ${stats.first + 1} / ${stats.second}"
-            binding?.tvRowCounter?.text = counterText
+
+        inputViewScope?.launch {
+            viewModel?.sessionStats?.collect { stats ->
+                val session = CsvRepository.getSession()
+                val counterText = if (session == null || session.totalRows == 0 || stats.second == 0)
+                    "No data"
+                else
+                    "Row ${stats.first + 1} / ${stats.second}"
+                binding?.tvRowCounter?.text = counterText
+            }
         }
     }
 
-    private fun renderRow(row: CsvRow) {
-        val configs = ColumnConfigStore.load(this) ?: return
+    @SuppressLint("ClickableViewAccessibility")
+    private suspend fun renderRow(row: CsvRow) {
+        val configs = ColumnConfigStore.load(this)
 
-        binding?.infoChipsContainer?.removeAllViews()
-        binding?.typeButtonsContainer?.removeAllViews()
+        // Cross-fade animation setup
+        binding?.infoChipsContainer?.animate()?.alpha(0f)?.setDuration(75)?.withEndAction {
+            binding?.infoChipsContainer?.removeAllViews()
 
-        val themedContext = ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)
-        val inflater = LayoutInflater.from(themedContext)
+            val themedContext = ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)
+            val inflater = LayoutInflater.from(themedContext)
 
-        configs.sortedBy { it.order }.forEach { config ->
-            val rawValue = row.data[config.columnName] ?: ""
-            val value = rawValue.ifBlank { "—" }
+            configs.sortedBy { it.order }.forEach { config ->
+                val rawValue = row.data[config.columnName] ?: ""
+                val value = rawValue.ifBlank { "—" }
 
-            when (config.mode) {
-                ColumnMode.INFO -> {
+                if (config.mode == ColumnMode.INFO) {
                     val chip = inflater.inflate(R.layout.view_info_chip, binding?.infoChipsContainer, false)
                     chip.findViewById<TextView>(R.id.tvLabel).text = config.displayLabel
-                    chip.findViewById<TextView>(R.id.tvValue).text = value
+                    val tvValue = chip.findViewById<TextView>(R.id.tvValue)
+                    tvValue.text = value
+
+                    if (row.isDone) {
+                        tvValue.setTextColor(Color.parseColor("#888888"))
+                        chip.alpha = 0.5f
+                    }
+
+                    chip.contentDescription = "${config.displayLabel}: $value, info only"
                     chip.setOnClickListener { copyToClipboard(value, config.displayLabel) }
                     binding?.infoChipsContainer?.addView(chip)
                 }
-                ColumnMode.TYPE -> {
+            }
+            binding?.infoChipsContainer?.animate()?.alpha(1f)?.setDuration(75)?.start()
+        }?.start()
+
+        binding?.typeButtonsContainer?.animate()?.alpha(0f)?.setDuration(75)?.withEndAction {
+            binding?.typeButtonsContainer?.removeAllViews()
+
+            val themedContext = ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)
+            val inflater = LayoutInflater.from(themedContext)
+
+            configs.sortedBy { it.order }.forEach { config ->
+                val rawValue = row.data[config.columnName] ?: ""
+                val value = rawValue.ifBlank { "—" }
+
+                if (config.mode == ColumnMode.TYPE) {
                     val btn = inflater.inflate(R.layout.view_type_button, binding?.typeButtonsContainer, false)
-                    btn.findViewById<TextView>(R.id.tvLabel).text = config.displayLabel
-                    btn.findViewById<TextView>(R.id.tvValue).text = value
+                    val tvLabel = btn.findViewById<TextView>(R.id.tvLabel)
+                    val tvValue = btn.findViewById<TextView>(R.id.tvValue)
+                    tvLabel.text = config.displayLabel
+                    tvValue.text = value
+                    btn.contentDescription = "Type ${config.displayLabel} value: $value"
+
+                    try {
+                        val card = btn as com.google.android.material.card.MaterialCardView
+                        card.setCardBackgroundColor(Color.parseColor(config.colorHex))
+                        if (row.isDone) {
+                            tvLabel.setTextColor(Color.parseColor("#888888"))
+                            tvValue.setTextColor(Color.parseColor("#888888"))
+                            card.alpha = 0.5f
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    btn.setOnTouchListener { v, event ->
+                        when(event.action) {
+                            MotionEvent.ACTION_DOWN -> {
+                                val scaleDown = ObjectAnimator.ofPropertyValuesHolder(
+                                    v,
+                                    PropertyValuesHolder.ofFloat("scaleX", 0.95f),
+                                    PropertyValuesHolder.ofFloat("scaleY", 0.95f)
+                                )
+                                scaleDown.duration = 80
+                                scaleDown.interpolator = AccelerateDecelerateInterpolator()
+                                scaleDown.start()
+                            }
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                val scaleUp = ObjectAnimator.ofPropertyValuesHolder(
+                                    v,
+                                    PropertyValuesHolder.ofFloat("scaleX", 1f),
+                                    PropertyValuesHolder.ofFloat("scaleY", 1f)
+                                )
+                                scaleUp.duration = 80
+                                scaleUp.interpolator = AccelerateDecelerateInterpolator()
+                                scaleUp.start()
+                            }
+                        }
+                        false // Let click listener handle the actual click
+                    }
+
                     btn.setOnClickListener { safeCommitText(value) }
+
+                    btn.setOnLongClickListener {
+                        val popup = PopupMenu(this, btn)
+                        popup.menu.add(0, 1, 0, getString(R.string.copy))
+                        popup.menu.add(0, 2, 1, getString(R.string.type_space))
+                        popup.menu.add(0, 3, 2, getString(R.string.type_newline))
+
+                        popup.setOnMenuItemClickListener { item: MenuItem ->
+                            when (item.itemId) {
+                                1 -> copyToClipboard(value, config.displayLabel)
+                                2 -> safeCommitText("$value ")
+                                3 -> safeCommitText("$value\n")
+                            }
+                            true
+                        }
+                        popup.show()
+                        true
+                    }
+
                     binding?.typeButtonsContainer?.addView(btn)
                 }
-                ColumnMode.HIDDEN -> {}
             }
-        }
+            binding?.typeButtonsContainer?.animate()?.alpha(1f)?.setDuration(75)?.start()
+        }?.start()
     }
 
     private fun copyToClipboard(text: String, label: String) {
