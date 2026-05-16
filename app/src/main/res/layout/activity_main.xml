@@ -99,12 +99,5 @@
             android:textColor="#AAAAAA"
             android:layout_marginTop="8dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnExportLog"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Export Log"
-            android:visibility="gone" />
-
     </LinearLayout>
 </LinearLayout>

@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -23,18 +22,14 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.mahavtaar.csvkeyboard.R
 import com.mahavtaar.csvkeyboard.data.csv.CsvParser
 import com.mahavtaar.csvkeyboard.data.csv.CsvRepository
-import com.mahavtaar.csvkeyboard.data.db.AppDatabase
 import com.mahavtaar.csvkeyboard.data.prefs.AppPreferences
 import com.mahavtaar.csvkeyboard.data.prefs.ColumnConfigStore
 import com.mahavtaar.csvkeyboard.databinding.ActivityMainBinding
-import com.mahavtaar.csvkeyboard.ui.config.ColumnConfigActivity
 import com.mahavtaar.csvkeyboard.ui.floating.FloatingBallManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileWriter
 
 class MainActivity : AppCompatActivity() {
 
@@ -44,20 +39,10 @@ class MainActivity : AppCompatActivity() {
         const val REQUEST_CODE_NOTIFICATION = 1002
     }
 
-    private val csvPicker = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == RESULT_OK) {
-            val uri = result.data?.data
-            uri?.let {
-                try {
-                    contentResolver.takePersistableUriPermission(
-                        it,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                } catch (e: SecurityException) {
-                    e.printStackTrace()
-                }
-                loadCsvData(it)
-            }
+    private val csvPicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let {
+            CsvRepository.saveUri(this, it)
+            loadCsvData(it)
         }
     }
 
@@ -78,21 +63,29 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         binding.btnEnableKeyboard.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+            try {
+                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+            } catch (e: android.content.ActivityNotFoundException) {
+                try {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                    Toast.makeText(this, "Go to Language & Input → Manage keyboards → Enable CSV Keyboard", Toast.LENGTH_LONG).show()
+                } catch (e2: android.content.ActivityNotFoundException) {
+                    Toast.makeText(this, "Please enable CSV Keyboard in your device Settings under Language & Input", Toast.LENGTH_LONG).show()
+                }
+            }
         }
 
         binding.btnSelectKeyboard.setOnClickListener {
-            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showInputMethodPicker()
+            try {
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showInputMethodPicker()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Please tap the keyboard icon in your navigation bar to switch keyboards", Toast.LENGTH_LONG).show()
+            }
         }
 
         binding.btnLoadCsv.setOnClickListener {
-            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                type = "text/*"
-                addCategory(Intent.CATEGORY_OPENABLE)
-                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-            }
-            csvPicker.launch(intent)
+            csvPicker.launch("text/*")
         }
 
         binding.btnEnableOverlay.setOnClickListener {
@@ -195,14 +188,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 !csvLoaded -> {
                     (btnAction as TextView).text = "Load CSV"
-                    btnAction.setOnClickListener {
-                        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                            type = "text/*"
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                        }
-                        csvPicker.launch(intent)
-                    }
+                    btnAction.setOnClickListener { csvPicker.launch("text/*") }
                 }
                 else -> {
                     AppPreferences.save(this, "onboarding_done", true)
@@ -244,18 +230,12 @@ class MainActivity : AppCompatActivity() {
         binding.tvBallStatus.text = if (binding.switchFloatingBall.isChecked) "Floating ball is active ✓" else "Tap to show info bubble over any app"
         setupListeners()
 
-        lifecycleScope.launch {
-            val session = CsvRepository.loadSession(this@MainActivity)
-            if (session != null) {
-                binding.tvCsvStats.text = getString(R.string.csv_stats, session.totalRows, session.headers.size)
-                binding.tvCsvStats.visibility = View.VISIBLE
-
-                binding.btnExportLog.visibility = View.VISIBLE
-                binding.btnExportLog.setOnClickListener { exportSessionLog() }
-            } else {
-                binding.tvCsvStats.visibility = View.GONE
-                binding.btnExportLog.visibility = View.GONE
-            }
+        val session = CsvRepository.loadSessionFromPrefs(this@MainActivity)
+            if (session != null && CsvRepository.isUriStillValid(this@MainActivity, session.filePath)) {
+            binding.tvCsvStats.text = getString(R.string.csv_stats, session.totalRows, session.headers.size)
+            binding.tvCsvStats.visibility = View.VISIBLE
+        } else {
+            binding.tvCsvStats.visibility = View.GONE
         }
     }
 
@@ -264,23 +244,16 @@ class MainActivity : AppCompatActivity() {
             val result = CsvParser().parse(uri, this@MainActivity)
             withContext(Dispatchers.Main) {
                 result.onSuccess { parseResult ->
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        CsvRepository.saveSessionData(this@MainActivity, parseResult.headers, parseResult.rows, uri.toString())
-                        val db = AppDatabase.getDatabase(this@MainActivity)
-                        val existingConfigs = db.columnConfigDao().getAll()
-                        if (existingConfigs.isEmpty() || existingConfigs.size != parseResult.headers.size) {
-                            db.columnConfigDao().deleteAll()
-                            db.columnConfigDao().insertAll(ColumnConfigStore.generateDefaults(parseResult.headers))
-                        }
+                    CsvRepository.saveSessionData(this@MainActivity, parseResult.headers, parseResult.rows, uri.toString())
+                    CsvRepository.loadSessionFromPrefs(this@MainActivity)?.let { CsvRepository.initSession(it) }
 
-                        val session = CsvRepository.loadSession(this@MainActivity)
-                        session?.let { CsvRepository.initSession(it) }
-
-                        withContext(Dispatchers.Main) {
-                            showSuccessBottomSheet(parseResult.rows.size, parseResult.headers)
-                            refreshAllPermissionStates()
-                        }
+                    val currentConfigs = ColumnConfigStore.load(this@MainActivity)
+                    if (currentConfigs == null || currentConfigs.size != parseResult.headers.size) {
+                         ColumnConfigStore.save(this@MainActivity, ColumnConfigStore.generateDefaults(parseResult.headers))
                     }
+
+                    showSuccessBottomSheet(parseResult.rows.size, parseResult.headers)
+                    refreshAllPermissionStates()
                 }.onFailure {
                     Toast.makeText(this@MainActivity, "Error parsing CSV: ${it.message}", Toast.LENGTH_LONG).show()
                 }
@@ -297,47 +270,10 @@ class MainActivity : AppCompatActivity() {
         tvDetails.text = "Found $rowCount rows\nColumns detected: ${headers.joinToString(", ")}"
 
         view.findViewById<View>(R.id.btnConfigureColumns).setOnClickListener {
-            startActivity(Intent(this, ColumnConfigActivity::class.java))
+            Toast.makeText(this, "Configure Columns Coming in Phase 2", Toast.LENGTH_SHORT).show()
             dialog.dismiss()
         }
 
         dialog.show()
-    }
-
-    private fun exportSessionLog() {
-        lifecycleScope.launch(Dispatchers.IO) {
-            val session = CsvRepository.loadSession(this@MainActivity) ?: return@launch
-            try {
-                val downloadsFolder = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val file = File(downloadsFolder, "CSV_Keyboard_Export_${System.currentTimeMillis()}.csv")
-
-                val writer = FileWriter(file)
-                val headerString = session.headers.joinToString(",") + ",isDone"
-                writer.append(headerString + "\n")
-
-                session.rows.forEach { row ->
-                    val rowString = session.headers.joinToString(",") { header ->
-                        val value = row.data[header] ?: ""
-                        if (value.contains(",") || value.contains("\"")) {
-                            "\"${value.replace("\"", "\"\"")}\""
-                        } else {
-                            value
-                        }
-                    } + ",${row.isDone}"
-                    writer.append(rowString + "\n")
-                }
-
-                writer.flush()
-                writer.close()
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Exported to Downloads: ${file.name}", Toast.LENGTH_LONG).show()
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Export failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
     }
 }

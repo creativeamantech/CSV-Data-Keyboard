@@ -7,7 +7,6 @@ object AppPreferences {
     private const val PREFS_NAME = "csv_keyboard_prefs"
 
     const val KEY_CSV_URI = "csv_uri"
-    const val KEY_CHANGE_STAMP = "change_stamp"
     const val KEY_CURRENT_ROW = "current_row_index"
     const val KEY_COLUMN_CONFIGS = "column_configs_json"
     const val KEY_CSV_HEADERS = "csv_headers_json"
@@ -15,7 +14,7 @@ object AppPreferences {
     const val KEY_BALL_ENABLED = "ball_enabled"
     const val KEY_CSV_ROWS = "csv_rows_json"
 
-    fun getPrefs(context: Context): SharedPreferences {
+    private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
@@ -29,10 +28,6 @@ object AppPreferences {
 
     fun save(context: Context, key: String, value: Boolean) {
         getPrefs(context).edit().putBoolean(key, value).apply()
-    }
-
-    fun save(context: Context, key: String, value: Long) {
-        getPrefs(context).edit().putLong(key, value).apply()
     }
 
     fun getString(context: Context, key: String, defaultValue: String? = null): String? {

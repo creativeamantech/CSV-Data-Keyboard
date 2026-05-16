@@ -6,45 +6,35 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
-import android.os.IBinder
 import android.os.Looper
-import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
-import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.lifecycleScope
 import com.mahavtaar.csvkeyboard.R
 import com.mahavtaar.csvkeyboard.data.csv.CsvRepository
 import com.mahavtaar.csvkeyboard.data.csv.SessionBus
 import com.mahavtaar.csvkeyboard.data.model.ColumnMode
 import com.mahavtaar.csvkeyboard.data.prefs.ColumnConfigStore
-import com.mahavtaar.csvkeyboard.ui.setup.MainActivity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
-class FloatingBallService : Service(), SessionBus.RowChangeListener {
+class FloatingBallService : LifecycleService() {
 
     private lateinit var windowManager: WindowManager
     private lateinit var ballView: View
@@ -53,13 +43,9 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
     private lateinit var cardParams: WindowManager.LayoutParams
     private var isExpanded = false
 
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-
-    override fun onBind(intent: Intent?): IBinder? = null
-
     companion object {
-        const val ACTION_STOP = "STOP_FLOATING_BALL"
-        const val CHANNEL_ID = "floating_ball_channel"
+        const val ACTION_STOP = "STOP_FLOATING"
+        const val CHANNEL_ID = "csv_floating_ball"
         const val NOTIF_ID = 1001
     }
 
@@ -67,7 +53,7 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
         super.onCreate()
         createNotificationChannel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIF_ID, buildNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            startForeground(NOTIF_ID, buildNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIF_ID, buildNotification())
         }
@@ -77,37 +63,12 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
         inflateBall()
         inflateCard()
 
-        SessionBus.init(this)
-        SessionBus.addListener(this)
-    }
-
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-
-        // Ensure ball snaps to edge within new screen bounds
-        if (::ballView.isInitialized && ::ballParams.isInitialized) {
-            val screenWidth = resources.displayMetrics.widthPixels
-            val screenHeight = resources.displayMetrics.heightPixels
-
-            // Keep ball inside vertically
-            if (ballParams.y > screenHeight - ballView.height) {
-                ballParams.y = screenHeight - ballView.height
-            }
-
-            // Snap to edge horizontally
-            snapToEdge()
-
-            if (isExpanded) {
-                cardParams.x = ballParams.x.coerceIn(0, screenWidth - 320)
-                cardParams.y = ballParams.y
-                safeUpdateLayout(cardView, cardParams)
+        lifecycleScope.launch {
+            SessionBus.rowChanged.collect {
+                refreshCardData()
+                animateBallPulse()
             }
         }
-    }
-
-    override fun onRowChanged(newIndex: Int) {
-        refreshCardData()
-        animateBallPulse()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -121,9 +82,13 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
     private fun safeAddView(view: View, params: WindowManager.LayoutParams) {
         Handler(Looper.getMainLooper()).post {
             try {
-                if (!view.isAttachedToWindow) {
+                if (!view.isAttachedToWindow && view.parent == null) {
                     windowManager.addView(view, params)
                 }
+            } catch (e: WindowManager.BadTokenException) {
+                stopSelf()
+            } catch (e: IllegalStateException) {
+                // Ignore
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -186,15 +151,6 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
     }
 
     private fun createOverlayParams(width: Int, height: Int): WindowManager.LayoutParams {
-        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val initialY = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val insets = windowManager.currentWindowMetrics.windowInsets
-            val topInset = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()).top
-            topInset + 100 // Safely offset below notch/status bar
-        } else {
-            200
-        }
-
         return WindowManager.LayoutParams(
             width,
             height,
@@ -206,7 +162,7 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 0
-            y = initialY
+            y = 200
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 blurBehindRadius = 0
             }
@@ -214,7 +170,7 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
     }
 
     private fun inflateBall() {
-        ballView = LayoutInflater.from(ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)).inflate(R.layout.view_floating_ball, null)
+        ballView = LayoutInflater.from(android.view.ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)).inflate(R.layout.view_floating_ball, null)
         ballParams = createOverlayParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT
@@ -222,48 +178,10 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
         safeAddView(ballView, ballParams)
         setupBallTouchListener()
         refreshCardData()
-
-        ballView.setOnLongClickListener {
-            val popup = PopupMenu(ContextThemeWrapper(this, R.style.Theme_CsvKeyboard), ballView)
-            popup.menu.add(0, 1, 0, getString(R.string.stop_floating))
-            popup.menu.add(0, 2, 1, getString(R.string.settings))
-            popup.menu.add(0, 3, 2, getString(R.string.reload))
-
-            popup.setOnMenuItemClickListener { item ->
-                when (item.itemId) {
-                    1 -> {
-                        FloatingBallManager.stop(this)
-                        true
-                    }
-                    2 -> {
-                        val intent = Intent(this, MainActivity::class.java)
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(intent)
-                        true
-                    }
-                    3 -> {
-                        serviceScope.launch {
-                            val session = CsvRepository.loadSession(this@FloatingBallService)
-                            if (session != null) {
-                                CsvRepository.initSession(session)
-                                withContext(Dispatchers.Main) {
-                                    refreshCardData()
-                                    Toast.makeText(this@FloatingBallService, "Reloaded", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                        true
-                    }
-                    else -> false
-                }
-            }
-            popup.show()
-            true
-        }
     }
 
     private fun inflateCard() {
-        cardView = LayoutInflater.from(ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)).inflate(R.layout.view_floating_card, null)
+        cardView = LayoutInflater.from(android.view.ContextThemeWrapper(this, R.style.Theme_CsvKeyboard)).inflate(R.layout.view_floating_card, null)
         cardParams = createOverlayParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT
@@ -284,12 +202,6 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
         var initialX = 0; var initialY = 0
         var touchX = 0f; var touchY = 0f
         var isDragging = false
-        var isLongPress = false
-        val longPressRunnable = Runnable {
-            isLongPress = true
-            ballView.performLongClick()
-        }
-        val handler = Handler(Looper.getMainLooper())
 
         ballView.setOnTouchListener { _, event ->
             when (event.action) {
@@ -299,17 +211,12 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
                     touchX = event.rawX
                     touchY = event.rawY
                     isDragging = false
-                    isLongPress = false
-                    handler.postDelayed(longPressRunnable, 500)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-                    if (abs(dx) > 10 || abs(dy) > 10) {
-                        isDragging = true
-                        handler.removeCallbacks(longPressRunnable)
-                    }
+                    if (abs(dx) > 10 || abs(dy) > 10) isDragging = true
 
                     if (isDragging) {
                         ballParams.x = (initialX + dx).toInt()
@@ -318,10 +225,9 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
                     }
                     true
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    handler.removeCallbacks(longPressRunnable)
-                    if (!isDragging && !isLongPress) expandCard()
-                    else if (isDragging) snapToEdge()
+                MotionEvent.ACTION_UP -> {
+                    if (!isDragging) expandCard()
+                    else snapToEdge()
                     true
                 }
                 else -> false
@@ -338,7 +244,6 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
 
     private fun expandCard() {
         if (isExpanded) return
-        if (cardView.isAttachedToWindow) return
         isExpanded = true
         val screenWidth = resources.displayMetrics.widthPixels
         cardParams.x = ballParams.x.coerceIn(0, screenWidth - 320)
@@ -363,35 +268,32 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
     }
 
     private fun refreshCardData() {
-        serviceScope.launch(Dispatchers.IO) {
-            val session = CsvRepository.getSession() ?: CsvRepository.loadSession(this@FloatingBallService)
-
-            withContext(Dispatchers.Main) {
-                if (session == null) {
-                    ballView.findViewById<TextView>(R.id.tvBallRow).text = "-"
-                    return@withContext
-                }
-                CsvRepository.initSession(session)
-                val row = session.currentRow
-                ballView.findViewById<TextView>(R.id.tvBallRow).text = (session.currentIndex + 1).toString()
-
-                val configs = ColumnConfigStore.load(this@FloatingBallService)
-                val container = cardView.findViewById<LinearLayout>(R.id.cardRowsContainer)
-                container.removeAllViews()
-
-                configs.filter { it.mode != ColumnMode.HIDDEN }.sortedBy { it.order }.forEach { config ->
-                    val rawValue = row.data[config.columnName] ?: ""
-                    val value = rawValue.ifBlank { "—" }
-                    val rowView = LayoutInflater.from(this@FloatingBallService).inflate(R.layout.view_floating_card_row, container, false)
-                    rowView.findViewById<TextView>(R.id.tvRowLabel).text = config.displayLabel
-                    rowView.findViewById<TextView>(R.id.tvRowValue).text = value
-                    rowView.setOnClickListener { copyToClipboard(value, config.displayLabel) }
-                    container.addView(rowView)
-                }
-
-                val counterText = if (session.totalRows == 0) "No data" else "Row ${session.currentIndex + 1} / ${session.totalRows}"
-                cardView.findViewById<TextView>(R.id.tvCardRowCounter).text = counterText
+        Handler(Looper.getMainLooper()).post {
+            val session = CsvRepository.getSession() ?: CsvRepository.loadSessionFromPrefs(this@FloatingBallService)
+            if (session == null) {
+                ballView.findViewById<TextView>(R.id.tvBallRow).text = "-"
+                return@post
             }
+            CsvRepository.initSession(session)
+            val row = session.currentRow
+            ballView.findViewById<TextView>(R.id.tvBallRow).text = (session.currentIndex + 1).toString()
+
+            val configs = ColumnConfigStore.load(this@FloatingBallService) ?: return@post
+            val container = cardView.findViewById<LinearLayout>(R.id.cardRowsContainer)
+            container.removeAllViews()
+
+            configs.filter { it.mode != ColumnMode.HIDDEN }.sortedBy { it.order }.forEach { config ->
+                val rawValue = row.data[config.columnName] ?: ""
+                val value = rawValue.ifBlank { "—" }
+                val rowView = LayoutInflater.from(this@FloatingBallService).inflate(R.layout.view_floating_card_row, container, false)
+                rowView.findViewById<TextView>(R.id.tvRowLabel).text = config.displayLabel
+                rowView.findViewById<TextView>(R.id.tvRowValue).text = value
+                rowView.setOnClickListener { copyToClipboard(value, config.displayLabel) }
+                container.addView(rowView)
+            }
+
+            val counterText = if (session.totalRows == 0) "No data" else "Row ${session.currentIndex + 1} / ${session.totalRows}"
+            cardView.findViewById<TextView>(R.id.tvCardRowCounter).text = if (session.totalRows == 0) "0 / 0" else "${session.currentIndex + 1} / ${session.totalRows}"
         }
     }
 
@@ -403,8 +305,6 @@ class FloatingBallService : Service(), SessionBus.RowChangeListener {
     }
 
     override fun onDestroy() {
-        SessionBus.removeListener(this)
-        serviceScope.cancel()
         safeRemoveView(ballView)
         safeRemoveView(cardView)
         super.onDestroy()
