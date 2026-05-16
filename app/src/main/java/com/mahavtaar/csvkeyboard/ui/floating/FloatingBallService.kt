@@ -82,9 +82,13 @@ class FloatingBallService : LifecycleService() {
     private fun safeAddView(view: View, params: WindowManager.LayoutParams) {
         Handler(Looper.getMainLooper()).post {
             try {
-                if (!view.isAttachedToWindow) {
+                if (!view.isAttachedToWindow && view.parent == null) {
                     windowManager.addView(view, params)
                 }
+            } catch (e: WindowManager.BadTokenException) {
+                stopSelf()
+            } catch (e: IllegalStateException) {
+                // Ignore
             } catch (e: Exception) {
                 e.printStackTrace()
             }

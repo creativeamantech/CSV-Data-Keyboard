@@ -1,24 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="160dp"
-    android:gravity="center"
+    android:layout_height="280dp"
     android:orientation="vertical"
+    android:gravity="center"
     android:background="#1A1A2E"
-    android:paddingBottom="@dimen/keyboard_bottom_padding">
+    android:padding="24dp">
+
+    <ImageView
+        android:src="@drawable/ic_csv_ball"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:alpha="0.6"
+        android:contentDescription="No CSV loaded" />
 
     <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="📂 No CSV loaded"
+        android:text="@string/error_no_csv"
         android:textColor="#AAAAAA"
-        android:textSize="16sp" />
+        android:textSize="15sp"
+        android:gravity="center"
+        android:layout_marginTop="12dp" />
 
     <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Open CSV Keyboard app to load a file"
+        android:text="@string/error_no_csv_sub"
         android:textColor="#666666"
         android:textSize="12sp"
-        android:layout_marginTop="8dp" />
+        android:gravity="center"
+        android:layout_marginTop="4dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSetup"
+        android:text="@string/tap_to_setup"
+        android:layout_marginTop="20dp"
+        android:minWidth="160dp"
+        android:minHeight="48dp"
+        style="@style/Widget.Material3.Button.OutlinedButton" />
+
 </LinearLayout>

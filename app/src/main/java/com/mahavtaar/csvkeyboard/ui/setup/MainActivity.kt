@@ -63,12 +63,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupListeners() {
         binding.btnEnableKeyboard.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+            try {
+                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+            } catch (e: android.content.ActivityNotFoundException) {
+                try {
+                    startActivity(Intent(Settings.ACTION_SETTINGS))
+                    Toast.makeText(this, "Go to Language & Input → Manage keyboards → Enable CSV Keyboard", Toast.LENGTH_LONG).show()
+                } catch (e2: android.content.ActivityNotFoundException) {
+                    Toast.makeText(this, "Please enable CSV Keyboard in your device Settings under Language & Input", Toast.LENGTH_LONG).show()
+                }
+            }
         }
 
         binding.btnSelectKeyboard.setOnClickListener {
-            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showInputMethodPicker()
+            try {
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showInputMethodPicker()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Please tap the keyboard icon in your navigation bar to switch keyboards", Toast.LENGTH_LONG).show()
+            }
         }
 
         binding.btnLoadCsv.setOnClickListener {
@@ -217,8 +230,8 @@ class MainActivity : AppCompatActivity() {
         binding.tvBallStatus.text = if (binding.switchFloatingBall.isChecked) "Floating ball is active ✓" else "Tap to show info bubble over any app"
         setupListeners()
 
-        val session = CsvRepository.loadSessionFromPrefs(this)
-        if (session != null) {
+        val session = CsvRepository.loadSessionFromPrefs(this@MainActivity)
+            if (session != null && CsvRepository.isUriStillValid(this@MainActivity, session.filePath)) {
             binding.tvCsvStats.text = getString(R.string.csv_stats, session.totalRows, session.headers.size)
             binding.tvCsvStats.visibility = View.VISIBLE
         } else {

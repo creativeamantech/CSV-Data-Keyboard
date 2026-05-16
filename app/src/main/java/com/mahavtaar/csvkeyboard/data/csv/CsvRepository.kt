@@ -10,6 +10,17 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 object CsvRepository {
+    fun isUriStillValid(context: Context, uriString: String?): Boolean {
+        if (uriString.isNullOrBlank()) return false
+        return try {
+            val uri = Uri.parse(uriString)
+            context.contentResolver.openInputStream(uri)?.close()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private var currentSession: KeyboardSession? = null
 
     fun initSession(session: KeyboardSession) {
